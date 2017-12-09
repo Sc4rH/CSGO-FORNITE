@@ -204,7 +204,7 @@ public Action:Timer_UpdateListeners(Handle:timer)
 				if (distance != 0)
 				{
 					SetListenOverride(receiver, sender, (GetEntitiesDistance(receiver, sender) > distance) ? Listen_No : Listen_Yes);
-					CreateTimer(5.0, StepsTimer, TIMER_REPEAT);
+					CreateTimer(2.0, StepsTimer, TIMER_REPEAT);
 				}
 			}
 			else
