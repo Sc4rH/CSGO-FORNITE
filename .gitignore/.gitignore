@@ -258,11 +258,20 @@ public OnGameFrame()
 		{
 			 keys = GetClientButtons(i);
 			 if(keys & IN_ALT1)
-			 {
-				SetEntPropFloat(i, Prop_Data, "m_flLaggedMovementValue", 2.5);  
-			}
+			 	{
+					SetEntPropFloat(i, Prop_Data, "m_flLaggedMovementValue", 2.5);
+				}
+				CreateTimer(1.0, TimerCenterHUD, TIMER_REPEAT);
 		}
 	}
+}
+
+public Action TimerCenterHUD(Handle timer, any i)
+{
+		if(IsClientInGame(i) && IsPlayerAlive(i))
+		{
+			PrintCenterText(i, "Alive players: %i\nMetal: %i", g_iPoints[i][Alive], g_iPoints[i][Metal]);
+		}
 }
 
 public Action:Event_Round_Start(Event event, const char[] name, bool dontBroadcast)
