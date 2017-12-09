@@ -1,0 +1,503 @@
+#include <sourcemod>
+#include <sdktools>
+#include <sdkhooks>
+#include <cstrike>
+
+#define MUR_METAL	""
+#define ESCALIER_METAL	""
+#define SOL_METAL	""
+#define STEPS_SOUND ""
+#define LOAD_TRAIL ""
+
+#define LoadColor {248, 128, 16, 1}
+
+/*****/
+new Handle:g_hLiveVoiceRadius = INVALID_HANDLE;
+new Handle:g_hLiveHearDeadPlayers = INVALID_HANDLE;
+new Handle:g_hLiveHearAllTalk = INVALID_HANDLE;
+
+new Handle:g_hDeadVoiceRadius = INVALID_HANDLE;
+new Handle:g_hDeadHearLivePlayers = INVALID_HANDLE;
+new Handle:g_hDeadHearAllTalk = INVALID_HANDLE;
+
+new Float:g_liveVoiceRadius = 1000.0;
+new bool:g_liveHearDeadPlayers = false;
+new bool:g_liveHearAllTalk = true;
+
+new Float:g_deadVoiceRadius = 1000.0;
+new bool:g_deadHearLivePlayers = true;
+new bool:g_deadHearAllTalk = false;
+/****/
+
+new Float:glock_Position[3] =  {  };
+new Float:p250_Position[3] =  {  };
+new Float:fiveseven_Position[3] =  {  };
+new Float:deagle_Position[3] =  {  };
+new Float:elite_Position[3] =  {  };
+
+new Float:ump45_Position[3] =  {  };
+new Float:awp_Position[3] =  {  };
+new Float:ssg08_Position[3] =  {  };
+new Float:p90_Position[3] =  {  };
+new Float:scar20ct_Position[3] =  {  };
+new Float:m4a1_Position[3] =  {  };
+new Float:ak47_Position[3] =  {  };
+
+new Float:Metalchest_Position[3] =  {  };
+new Float:Weaponchest_Position[3] =  {  };
+
+enum Weapons 
+{
+	glock,
+	p250,
+	fiveseven,
+	deagle,
+	elite,
+	ump45,
+	awp,
+	ssg08,
+	p90,
+	scar20ct,
+	m4a1,
+	ak47,
+}
+enum Props
+{
+	Metalchest,
+	Weaponchest,
+}
+
+enum Points
+{
+	Metal,
+	Alive,
+}
+
+int g_iWeapons[Weapons];
+int g_iProps[Props];
+int g_iMurMetal;
+int g_iEscalierMetal;
+int g_iSolMetal;
+int g_iPoints[MAXPLAYERS+1][Points];
+int g_iLoadtrail;
+
+public OnPluginStart()
+{
+	RegConsoleCmd("sm_build", Build_Callback, "Menu pour Construire");
+	HookEvent("round_start", Event_Round_Start);
+	HookEvent("player_death", Event_Death);
+	HookEvent("player_spawned", Event_Spawn);
+	HookEvent("weapon_reaload", Event_Reload);
+	
+	g_hLiveVoiceRadius = CreateConVar("sm_voiceradius_live_distance", "500");
+	g_hLiveHearDeadPlayers = CreateConVar("sm_voiceradius_live_heardeadplayers", "0");
+	g_hLiveHearAllTalk = CreateConVar("sm_voiceradius_live_alltalk", "1");
+	g_hDeadVoiceRadius = CreateConVar("sm_voiceradius_dead_distance", "1000");
+	g_hDeadHearLivePlayers = CreateConVar("sm_voiceradius_dead_hearliveplayers", "1");
+	g_hDeadHearAllTalk = CreateConVar("sm_voiceradius_dead_alltalk", "0");
+	
+	HookConVarChange(g_hLiveVoiceRadius, Action_OnSettingsChange);
+	HookConVarChange(g_hLiveHearDeadPlayers, Action_OnSettingsChange);
+	HookConVarChange(g_hLiveHearAllTalk, Action_OnSettingsChange);
+	HookConVarChange(g_hDeadVoiceRadius, Action_OnSettingsChange);
+	HookConVarChange(g_hDeadHearLivePlayers, Action_OnSettingsChange);	
+	HookConVarChange(g_hDeadHearAllTalk, Action_OnSettingsChange);	
+	
+	AutoExecConfig(true);
+	
+	CreateTimer(0.2, Timer_UpdateListeners, _, TIMER_REPEAT);
+}
+
+public Action_OnSettingsChange(Handle:cvar, const String:oldvalue[], const String:newvalue[])
+{
+	if (cvar == g_hLiveVoiceRadius)
+		g_liveVoiceRadius = Float:StringToFloat(newvalue);
+	else if (cvar == g_hLiveHearDeadPlayers)
+		g_liveHearDeadPlayers = bool:StringToInt(newvalue);
+	else if (cvar == g_hLiveHearAllTalk)
+		g_liveHearAllTalk = bool:StringToInt(newvalue);	
+	else if (cvar == g_hDeadVoiceRadius)
+		g_deadVoiceRadius = Float:StringToFloat(newvalue);
+	else if (cvar == g_hDeadHearLivePlayers)
+		g_deadHearLivePlayers = bool:StringToInt(newvalue);
+	else if (cvar == g_hDeadHearAllTalk)
+		g_deadHearAllTalk = bool:StringToInt(newvalue);	
+}
+
+public Action:Timer_UpdateListeners(Handle:timer) 
+{
+	for (int receiver = 1; receiver <= MaxClients; receiver++)
+	{
+		if (!IsClientInGame(receiver))
+			continue;
+			
+		for (int sender = 1; sender <= MaxClients; sender++)
+		{
+			if (!IsClientInGame(sender))
+				continue;
+				
+			if (sender == receiver)
+				continue;
+							
+			new Float:distance = 0.0;
+			int cont = true;
+		
+			if (IsPlayerAlive(receiver))
+			{
+				if (IsPlayerAlive(sender))
+				{
+					if (g_liveHearAllTalk)
+						distance = g_liveVoiceRadius;
+					else
+						if (GetClientTeam(receiver) == GetClientTeam(sender))
+							distance = g_liveVoiceRadius;
+						else
+							cont = false;
+				}
+				else
+				{
+					if (g_liveHearDeadPlayers)
+					{
+						if (g_liveHearAllTalk)
+							distance = g_liveVoiceRadius;
+						else
+							if (GetClientTeam(receiver) == GetClientTeam(sender))
+								distance = g_liveVoiceRadius;
+							else
+								cont = false;
+					}
+					else
+						cont = false;
+				}
+			}
+			else
+			{
+				if (IsPlayerAlive(sender))
+				{
+					if (g_deadHearLivePlayers)
+					{
+						if (g_deadHearAllTalk)
+							distance = g_deadVoiceRadius;
+						else
+							if (GetClientTeam(receiver) == GetClientTeam(sender))
+								distance = g_deadVoiceRadius;
+							else
+								cont = false;									
+					}
+					else
+						cont = false;
+				}
+				else
+				{
+					if (g_deadHearAllTalk)
+						distance = g_deadVoiceRadius;
+					else
+						if (GetClientTeam(receiver) == GetClientTeam(sender))
+							distance = g_deadVoiceRadius;
+						else
+							cont = false;	 
+				}
+			}
+			
+			if (cont)
+			{
+				if (distance != 0)
+				{
+					SetListenOverride(receiver, sender, (GetEntitiesDistance(receiver, sender) > distance) ? Listen_No : Listen_Yes);
+					CreateTimer(5.0, StepsTimer, TIMER_REPEAT);
+				}
+			}
+			else
+			{
+				SetListenOverride(receiver, sender, Listen_No);
+			}
+		}
+	}
+}
+
+public Action StepsTimer(Handle timer, any receiver)
+{
+	EmitSoundToClient(receiver, STEPS_SOUND);
+}
+
+public OnMapStart()
+{
+	PrecacheModels();
+	PrecacheSounds();
+}
+
+PrecacheModels()
+{
+	g_iMurMetal = PrecacheModel(MUR_METAL);
+	g_iEscalierMetal = PrecacheModel(ESCALIER_METAL);
+	g_iSolMetal = PrecacheModel(SOL_METAL);
+	g_iLoadtrail = PrecacheModel(LOAD_TRAIL);
+}
+
+PrecacheSounds()
+{
+	AddFileToDownloadsTable(STEPS_SOUND);
+	PrecacheSound(STEPS_SOUND, true);
+}
+
+
+public OnClientPostAdminCheck(client)
+{
+	g_iPoints[client][Metal] = 0;
+	g_iPoints[client][Alive] = 0;
+}
+
+public Action:Event_Round_Start(Event event, const char[] name, bool dontBroadcast)
+{
+	/*Props*/
+	g_iProps[Metalchest] = CreateEntityByName( "prop_dynamic_override" );
+	g_iProps[Weaponchest] = CreateEntityByName( "prop_dynamic_override" );
+	
+	
+	if( IsValidEdict( g_iProps[Metalchest] )) 
+    { 
+        DispatchKeyValue( g_iProps[Metalchest], "Model", "models/" ); 
+        DispatchKeyValue( g_iProps[Metalchest], "Solid", "6" ); 
+        DispatchSpawn( g_iProps[Metalchest] ); 
+        SetEntProp( g_iProps[Metalchest], Prop_Data, "m_iHealth", 100 ); 
+        SetEntProp( g_iProps[Metalchest], Prop_Data, "m_takedamage", 3	);
+        SetEntityMoveType(	g_iProps[Metalchest], MOVETYPE_NONE);
+        SDKHook(g_iProps[Metalchest], SDKHook_Touch, OnTouch);
+        TeleportEntity(g_iProps[Metalchest], Metalchest_Position, NULL_VECTOR, NULL_VECTOR );
+        /*HookSingleEntityOutput( g_iProps[Metalchest], "OnBreak", _, true );*/
+    }
+    if(IsValidEdict(g_iProps[Weaponchest])) 
+    { 
+        DispatchKeyValue( g_iProps[Weaponchest], "Model", "models/" ); 
+        DispatchKeyValue( g_iProps[Weaponchest], "Solid", "6" ); 
+        DispatchSpawn( g_iProps[Weaponchest] ); 
+        SetEntProp( g_iProps[Weaponchest], Prop_Data, "m_iHealth", 150 ); 
+        SetEntProp( g_iProps[Weaponchest], Prop_Data, "m_takedamage", 10	);
+        SetEntityMoveType(	g_iProps[Weaponchest], MOVETYPE_NONE);
+        SDKHook(g_iProps[Weaponchest], SDKHook_Touch, OnTouchWeapons);
+        TeleportEntity(g_iProps[Weaponchest], Weaponchest_Position, NULL_VECTOR, NULL_VECTOR );
+        /*HookSingleEntityOutput( g_iProps[Metalchest], "OnBreak", _, true );*/
+    }
+    
+	/*Pistols*/
+	g_iWeapons[glock] = CreateEntityByName("weapon_glock");
+	g_iWeapons[p250] = CreateEntityByName("weapon_p250");
+	g_iWeapons[fiveseven] = CreateEntityByName("weapon_fiveseven");
+	g_iWeapons[deagle] = CreateEntityByName("weapon_deagle");
+	g_iWeapons[elite] = CreateEntityByName("weapon_elite");
+	
+	if(IsValidEntity(g_iWeapons[glock] && g_iWeapons[p250] && g_iWeapons[fiveseven] && g_iWeapons[deagle] && g_iWeapons[elite]))
+	{
+		DispatchSpawn(g_iWeapons[glock] && g_iWeapons[p250] && g_iWeapons[fiveseven] && g_iWeapons[deagle] && g_iWeapons[elite]);
+		TeleportEntity(g_iWeapons[glock], glock_Position, NULL_VECTOR, NULL_VECTOR);
+		TeleportEntity(g_iWeapons[p250], p250_Position, NULL_VECTOR, NULL_VECTOR);
+		TeleportEntity(g_iWeapons[fiveseven], fiveseven_Position, NULL_VECTOR, NULL_VECTOR);
+		TeleportEntity(g_iWeapons[deagle], deagle_Position, NULL_VECTOR, NULL_VECTOR);
+		TeleportEntity(g_iWeapons[elite], elite_Position, NULL_VECTOR, NULL_VECTOR);
+	}
+	/*Other*/
+	g_iWeapons[ump45] = CreateEntityByName("weapon_ump45");
+	g_iWeapons[awp] = CreateEntityByName("weapon_awp");
+	g_iWeapons[ssg08] = CreateEntityByName("weapon_ssg08");
+	g_iWeapons[p90] = CreateEntityByName("weapon_p90");
+	g_iWeapons[scar20ct] = CreateEntityByName("weapon_scar20");
+	g_iWeapons[m4a1] = CreateEntityByName("weapon_m4a1");
+	g_iWeapons[ak47] = CreateEntityByName("weapon_ak47");
+	if(IsValidEntity(g_iWeapons[ump45] && g_iWeapons[awp] && g_iWeapons[ssg08] && g_iWeapons[p90] && g_iWeapons[scar20ct] && g_iWeapons[m4a1] && g_iWeapons[ak47]))
+	{
+		DispatchSpawn(g_iWeapons[ump45] && g_iWeapons[awp] && g_iWeapons[ssg08] && g_iWeapons[p90] && g_iWeapons[scar20ct] && g_iWeapons[m4a1] && g_iWeapons[ak47]);
+		TeleportEntity(g_iWeapons[ump45], ump45_Position, NULL_VECTOR, NULL_VECTOR);
+		TeleportEntity(g_iWeapons[awp], awp_Position, NULL_VECTOR, NULL_VECTOR);
+		TeleportEntity(g_iWeapons[ssg08], ssg08_Position, NULL_VECTOR, NULL_VECTOR);
+		TeleportEntity(g_iWeapons[p90], p90_Position, NULL_VECTOR, NULL_VECTOR);
+		TeleportEntity(g_iWeapons[scar20ct], scar20ct_Position, NULL_VECTOR, NULL_VECTOR);
+		TeleportEntity(g_iWeapons[m4a1], m4a1_Position, NULL_VECTOR, NULL_VECTOR);
+		TeleportEntity(g_iWeapons[ak47], ak47_Position, NULL_VECTOR, NULL_VECTOR);
+	}
+}
+
+public Action:Event_Death(Event event, const char[] name, bool dontBroadcast)
+{
+	int kickplayer = GetClientOfUserId(GetEventInt(event, "userid"));
+	int wait = 6
+	if(kickplayer)
+	{
+		--wait
+		PrintCenterText(kickplayer, "Thank for Playing !\nMetal received: %i\nYour Rank: %i\nYou will be disconnected in 5seconds", g_iPoints[kickplayer][Metal], g_iPoints[kickplayer][Metal] += 1);
+		if (wait == 1)KickClient(kickplayer, "Thanks for Playing");
+	}
+
+}
+
+public Action:Event_Spawn(Event event, const char[] name, bool dontBroadcast)
+{
+	for (int i = 1; i <= MaxClients; i++)
+	{
+		if(IsPlayerAlive(i))
+		{
+			g_iPoints[i][Alive] += 1;
+		}
+	}
+}
+
+public Action Event_Reload(Event event, const char[] name, bool dontBroadcast)
+{
+	int client = GetClientOfUserId(GetEventInt(event, "userid"));
+	
+	TE_SetupBeamFollow(client, g_iLoadtrail, 0, Float:1.0, Float:3.0, Float:3.0, 1, LoadColor);
+	
+	return Plugin_Continue;
+}
+
+public Action:OnTouch( entity, client )
+{ 
+    if( IsValidClient( client ) && !IsFakeClient( client ) && IsPlayerAlive( client ) && IsValidEdict( client ) ) {
+	            	SetEntPropFloat(client, Prop_Send, "m_flProgressBarStartTime", GetGameTime());
+	            	SetEntProp(client, Prop_Send, "m_iProgressBarDuration", 3);
+	            	CreateTimer(5.0, iRemoveEdictMetalchest);
+	            	CreateTimer(2.0, iShowMetal)
+        }
+}
+
+public Action:OnTouchWeapons( entity, client )
+{ 
+    if( IsValidClient( client ) && !IsFakeClient( client ) && IsPlayerAlive( client ) && IsValidEdict( client ) ) {
+	            	SetEntPropFloat(client, Prop_Send, "m_flProgressBarStartTime", GetGameTime());
+	            	SetEntProp(client, Prop_Send, "m_iProgressBarDuration", 3);
+	            	CreateTimer(5.0, iRemoveEdictWeaponchest);
+	            	CreateTimer(2.0, iSpawnRandomWeapons)
+        }
+}
+
+public Action:iRemoveEdictMetalchest(Handle timer, any client)
+{
+	RemoveEdict(g_iProps[Metalchest]);
+}
+
+public Action:iRemoveEdictWeaponchest(Handle timer, any client)
+{
+	RemoveEdict(g_iProps[Weaponchest]);
+}
+
+public Action:iShowMetal(Handle timer, any client)
+{
+	g_iPoints[client][Metal] += 3;
+	
+	PrintCenterText(client, "You've got 3 Metal");
+}
+
+public Action:iSpawnRandomWeapons(Handle timer, any client)
+{
+	int RandomWeapon = GetRandomInt(1, 5);
+	float pPosition[3];
+	pPosition[2] += 5;
+	GetClientAbsOrigin(client, pPosition);
+	if(RandomWeapon == 1)
+	{
+		TeleportEntity(g_iWeapons[glock], pPosition, NULL_VECTOR, NULL_VECTOR);
+	}
+	else if(RandomWeapon == 2)
+	{
+		TeleportEntity(g_iWeapons[awp], pPosition, NULL_VECTOR, NULL_VECTOR);
+		TeleportEntity(g_iWeapons[fiveseven], pPosition, NULL_VECTOR, NULL_VECTOR);
+	}
+	else if(RandomWeapon == 3)
+	{
+		TeleportEntity(g_iWeapons[ssg08], pPosition, NULL_VECTOR, NULL_VECTOR);
+	}
+	else if(RandomWeapon == 4)
+	{
+		TeleportEntity(g_iWeapons[ump45], pPosition, NULL_VECTOR, NULL_VECTOR);
+	}
+	else if(RandomWeapon == 5)
+	{
+			TeleportEntity(g_iWeapons[m4a1], pPosition, NULL_VECTOR, NULL_VECTOR);
+			TeleportEntity(g_iWeapons[ak47], pPosition, NULL_VECTOR, NULL_VECTOR);
+	}
+}
+
+public Action:Build_Callback(int client, int args)
+{
+	Menu menu = new Menu(Menu_Build);
+	menu.SetTitle("Build Menu");
+	menu.AddItem("Mur", "Mur");
+	menu.AddItem("Escalier", "Escalier");
+	menu.AddItem("Sol", "Sol");
+	menu.ExitButton = true;
+	menu.Display(client, MENU_TIME_FOREVER);
+}
+
+public int Menu_Build(Handle menu, MenuAction action, int client, int choose)
+{
+	if(action == MenuAction_Select)
+	{
+		switch(choose)
+		{
+			case 0:SpawnMur(client);
+			case 1:SpawnEscalier(client);
+			case 2:SpawnSol(client);
+		}
+	}
+	else
+	{
+		CloseHandle(menu);
+	}
+}
+
+public void SpawnMur(int client)
+{
+	float fAngles[3];
+	GetClientAbsAngles(client, fAngles);
+	fAngles[2] += 5;
+	if(IsPlayerAlive(client) && g_iPoints[client][Metal] > 10 && g_iPoints[client][Metal] == 10)
+	{
+		TeleportEntity(g_iMurMetal, fAngles, NULL_VECTOR, NULL_VECTOR);
+		g_iPoints[client][Metal] -= 10;
+	}
+	else return;
+}
+
+public void SpawnEscalier(int client)
+{
+	float fAngles[3];
+	GetClientAbsAngles(client, fAngles);
+	fAngles[2] += 5;
+	if(IsPlayerAlive(client) && g_iPoints[client][Metal] > 10 && g_iPoints[client][Metal] == 10)
+	{
+		TeleportEntity(g_iEscalierMetal, fAngles, NULL_VECTOR, NULL_VECTOR);
+		g_iPoints[client][Metal] -= 10;
+	}
+	else return;
+}
+
+public void SpawnSol(int client)
+{
+	float fAngles[3];
+	GetClientAbsAngles(client, fAngles);
+	fAngles[2] += 5;
+	if(IsPlayerAlive(client) && g_iPoints[client][Metal] > 10 && g_iPoints[client][Metal] == 10)
+	{
+		TeleportEntity(g_iSolMetal, fAngles, NULL_VECTOR, NULL_VECTOR);
+		g_iPoints[client][Metal] -= 10;
+	}
+	else return;
+}
+
+public bool IsValidClient( client ) {
+    if( !( 1 <= client <= MaxClients ) || !IsClientInGame( client ) ) {
+        return false
+    }
+    
+    return true
+}
+
+stock Float:GetEntitiesDistance(ent1, ent2)
+{
+	new Float:orig1[3];
+	GetEntPropVector(ent1, Prop_Send, "m_vecOrigin", orig1);
+	
+	new Float:orig2[3];
+	GetEntPropVector(ent2, Prop_Send, "m_vecOrigin", orig2);
+
+	return GetVectorDistance(orig1, orig2);
+}
