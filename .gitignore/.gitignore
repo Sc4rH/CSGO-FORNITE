@@ -247,6 +247,22 @@ public OnClientPostAdminCheck(client)
 	g_iPoints[client][Alive] = 0;
 }
 
+public OnGameFrame()
+{
+	int keys;
+	for (new i = 1; i <= MaxClients; i++)
+	{
+		if(IsClientInGame(i) && IsPlayerAlive(i))
+		{
+			 keys = GetClientButtons(i);
+			 if(keys & IN_ALT1)
+			 {
+				SetEntPropFloat(i, Prop_Data, "m_flLaggedMovementValue", 2.5);  
+			}
+		}
+	}
+}
+
 public Action:Event_Round_Start(Event event, const char[] name, bool dontBroadcast)
 {
 	/*Props*/
